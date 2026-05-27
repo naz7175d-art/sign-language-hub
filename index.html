@@ -62,43 +62,63 @@
                 return;
             }
             
-            document.getElementById("result").innerText = "Loading AI Core...";
-            model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
-            maxPredictions = model.getTotalClasses();
-            document.getElementById("result").innerText = "AI System Active!";
+            try {
+                document.getElementById("result").innerText = "Loading AI Core...";
+                
+                // CRUCIAL FOR SECURITY BYPASS: Set crossOrigin request on the image stream
+                const imgElement = document.getElementById("camera-stream");
+                imgElement.crossOrigin = "anonymous";
+                
+                model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
+                maxPredictions = model.getTotalClasses();
+                document.getElementById("result").innerText = "AI System Active! Starting Loop...";
 
-            const imgElement = document.getElementById("camera-stream");
-            
-            // Loop evaluation loop checking 3 times per second
-            setInterval(async () => {
-                if (!model) return;
-                
-                // Pass the current live image layout frame to the model classifier
-                const prediction = await model.predict(imgElement);
-                
-                let highestProbability = 0;
-                let recognizedSign = "";
-                
-                for (let i = 0; i < maxPredictions; i++) {
-                    if (prediction[i].probability > highestProbability) {
-                        highestProbability = prediction[i].probability;
-                        recognizedSign = prediction[i].className;
-                    }
-                }
-                
-                // Only act if the classification exceeds an 85% accuracy confidence score
-                if (highestProbability > 0.85) {
-                    document.getElementById("result").innerText = "Sign: " + recognizedSign;
+                // Evaluation loop checking once per second (1000ms) to ensure stability
+                setInterval(async () => {
+                    if (!model) return;
                     
-                    // Optimization: Only push string over the USB link if the classification has changed
-                    if (recognizedSign !== lastSentSign) {
-                        lastSentSign = recognizedSign;
-                        if (writer) {
-                            await writer.write(recognizedSign + "\n");
+                    try {
+                        // Pass the current live image layout frame to the model classifier
+                        const prediction = await model.predict(imgElement);
+                        
+                        let highestProbability = 0;
+                        let recognizedSign = "";
+                        
+                        for (let i = 0; i < maxPredictions; i++) {
+                            if (prediction[i].probability > highestProbability) {
+                                highestProbability = prediction[i].probability;
+                                recognizedSign = prediction[i].className;
+                            }
                         }
+                        
+                        // Update screen to show current active prediction, even if low confidence
+                        if (highestProbability <= 0.85) {
+                            document.getElementById("result").innerText = "Analyzing... (Low Confidence)";
+                        }
+                        
+                        // Only act if the classification exceeds an 85% accuracy confidence score
+                        if (highestProbability > 0.85) {
+                            document.getElementById("result").innerText = "Sign: " + recognizedSign;
+                            
+                            // Optimization: Only push string over the USB link if the classification has changed
+                            if (recognizedSign !== lastSentSign) {
+                                lastSentSign = recognizedSign;
+                                if (writer) {
+                                    await writer.write(recognizedSign + "\n");
+                                }
+                            }
+                        }
+                    } catch (loopErr) {
+                        // Catching CORS or loading errors mid-loop to prevent freezing
+                        console.warn("Prediction frame skipped: ", loopErr.message);
+                        document.getElementById("result").innerText = "Syncing Camera Stream...";
                     }
-                }
-            }, 350);
+                }, 1000);
+                
+            } catch (err) {
+                document.getElementById("result").innerText = "Failed to Load AI.";
+                console.error("AI Initialization Error: ", err);
+            }
         }
     </script>
 </body>
