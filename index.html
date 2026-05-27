@@ -30,15 +30,11 @@
     </div>
 
     <script>
-        // -------------------------------------------------------------
-        // CONFIGURATION: PASTE YOUR TEACHABLE MACHINE LINK HERE!
-        // -------------------------------------------------------------
         const MODEL_URL = "https://teachablemachine.withgoogle.com/models/edT_Pnnui/"; 
 
         let model, maxPredictions, serialPort, writer;
         let lastSentSign = "";
 
-        // Step 1: Open Chrome's built-in Web Serial utility to pass data to your 30-pin board
         async function connectHardware() {
             try {
                 serialPort = await navigator.serial.requestPort();
@@ -55,17 +51,10 @@
             }
         }
 
-        // Step 2: Download and unpack your trained neural network models right into memory
         async function startAIEngine() {
-            if (MODEL_URL.includes("YOUR_TEACHABLE_MACHINE")) {
-                alert("Error: You forgot to replace the placeholder URL on Line 31 with your real Teachable Machine link!");
-                return;
-            }
-            
             try {
                 document.getElementById("result").innerText = "Loading AI Core...";
                 
-                // CRUCIAL FOR SECURITY BYPASS: Set crossOrigin request on the image stream
                 const imgElement = document.getElementById("camera-stream");
                 imgElement.crossOrigin = "anonymous";
                 
@@ -73,12 +62,10 @@
                 maxPredictions = model.getTotalClasses();
                 document.getElementById("result").innerText = "AI System Active! Starting Loop...";
 
-                // Evaluation loop checking once per second (1000ms) to ensure stability
                 setInterval(async () => {
                     if (!model) return;
                     
                     try {
-                        // Pass the current live image layout frame to the model classifier
                         const prediction = await model.predict(imgElement);
                         
                         let highestProbability = 0;
@@ -91,25 +78,21 @@
                             }
                         }
                         
-                        // Update screen to show current active prediction, even if low confidence
-                        if (highestProbability <= 0.85) {
-                            document.getElementById("result").innerText = "Analyzing... (Low Confidence)";
-                        }
-                        
-                        // Only act if the classification exceeds an 85% accuracy confidence score
-                        if (highestProbability > 0.85) {
+                        // --- LOWERED THRESHOLD TO 55% AND PRINT THE ACTUAL GUESS ---
+                        if (highestProbability > 0.55) {
                             document.getElementById("result").innerText = "Sign: " + recognizedSign;
                             
-                            // Optimization: Only push string over the USB link if the classification has changed
                             if (recognizedSign !== lastSentSign) {
                                 lastSentSign = recognizedSign;
                                 if (writer) {
                                     await writer.write(recognizedSign + "\n");
                                 }
                             }
+                        } else {
+                            // Show what it's leaning toward even if the confidence is really low
+                            document.getElementById("result").innerText = "Low Confidence (" + recognizedSign + ")";
                         }
                     } catch (loopErr) {
-                        // Catching CORS or loading errors mid-loop to prevent freezing
                         console.warn("Prediction frame skipped: ", loopErr.message);
                         document.getElementById("result").innerText = "Syncing Camera Stream...";
                     }
