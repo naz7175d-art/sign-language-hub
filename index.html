@@ -78,8 +78,8 @@
                             }
                         }
                         
-                        // --- LOWERED THRESHOLD TO 55% AND PRINT THE ACTUAL GUESS ---
-                        if (highestProbability > 0.55) {
+                        // --- LOWERED THRESHOLD TO 70% AND PRINT THE ACTUAL GUESS ---
+                        if (highestProbability > 0.70) {
                             document.getElementById("result").innerText = "Sign: " + recognizedSign;
                             
                             if (recognizedSign !== lastSentSign) {
