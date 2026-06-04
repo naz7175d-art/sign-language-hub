@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Teachable Machine Wireless BLE Bridge</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #1e1e2e; color: #cdd6f4; padding: 20px; }
+        button { background-color: #a6e3a1; color: #11111b; border: none; padding: 14px 28px; font-size: 16px; font-weight: bold; margin: 10px; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+        button:hover { background-color: #94e2d5; }
+        #webcam-container { margin: 20px auto; width: 320px; height: 240px; border: 4px solid #45475a; border-radius: 12px; overflow: hidden; background: #313244; }
+        #status-display { font-size: 28px; font-weight: bold; color: #f5c2e7; margin-top: 15px; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.3/dist/teachablemachine-image.min.js"></script>
+</head>
+<body>
+
+    <h1>Sign Language BLE Bridge</h1>
+    <p>Feeds your model predictions directly into the ESP32 wireless antenna.</p>
+
+    <button onclick="connectBLE()">1. Connect LCD Board (Wireless BLE)</button>
+    <button onclick="initAI()">2. Turn on Camera Engine</button>
+
+    <div id="webcam-container"></div>
+    <div id="status-display">Status: Hardware Offline</div>
+
+    <script>
+        // Links directly to your custom model parameters!
+        const URL = "https://teachablemachine.withgoogle.com/models/Sim2_C55H/";
+        
+        let model, webcam, maxPredictions;
+        let bleCharacteristic;
+        let lastSentSign = "";
+
+        // UUID configurations to handshake with our updated Arduino sketch
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        // Web BLE pairing utility
+        async function connectBLE() {
+            try {
+                document.getElementById("status-display").innerText = "Searching for board...";
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'SignLang_BLE' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                bleCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                document.getElementById("status-display").innerText = "✓ Board Linked Wirelessly!";
+                alert("Success: ESP32 wireless link locked in!");
+            } catch (err) {
+                document.getElementById("status-display").innerText = "Connection Failed.";
+                console.error(err);
+            }
+        }
+
+        // Initialize the Teachable Machine video analyzer loop
+        async function initAI() {
+            document.getElementById("status-display").innerText = "Loading AI Weights...";
+            model = await tmImage.load(URL + "model.json", URL + "metadata.json");
+            maxPredictions = model.getTotalClasses();
+
+            webcam = new tmImage.Webcam(320, 240, true); 
+            await webcam.setup(); 
+            await webcam.play();
+            window.requestAnimationFrame(loopAI);
+
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            document.getElementById("status-display").innerText = "AI System Operational!";
+        }
+
+        async function loopAI() {
+            webcam.update(); 
+            await predictSign();
+            window.requestAnimationFrame(loopAI);
+        }
+
+        async function predictSign() {
+            const prediction = await model.predict(webcam.canvas);
+            let highestVal = 0;
+            let currentSign = "none";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].probability > highestVal) {
+                    highestVal = prediction[i].probability;
+                    currentSign = prediction[i].className;
+                }
+            }
+
+            // Enforce a strict 85%+ threshold to protect against false buzzing triggers
+            if (highestVal > 0.85) {
+                if (currentSign !== lastSentSign) {
+                    lastSentSign = currentSign;
+                    document.getElementById("status-display").innerText = "Prediction: " + currentSign.toUpperCase();
+                    
+                    // Transmit the string packet through the airwaves
+                    if (bleCharacteristic) {
+                        let encoder = new TextEncoder();
+                        await bleCharacteristic.writeValue(encoder.encode(currentSign + "\n"));
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
